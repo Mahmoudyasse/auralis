@@ -9,26 +9,65 @@ jobs:
           for z in *.zip; do unzip -oq "$z"; done
           D=$(dirname "$(find . -name settings.gradle.kts | head -1)")
           echo "D=$D" >> $GITHUB_ENV
-      - name: Inspect project
+      - name: Add app icon
         run: |
-          {
-            echo '### Files'
-            echo '```'
-            find "$D" -type f -not -path '*/build/*' -not -path '*/.gradle/*' | head -100
-            echo '```'
-            echo '### AndroidManifest.xml'
-            echo '```xml'
-            cat "$D/app/src/main/AndroidManifest.xml"
-            echo '```'
-            echo '### app/build.gradle.kts'
-            echo '```'
-            cat "$D/app/build.gradle.kts"
-            echo '```'
-          } >> $GITHUB_STEP_SUMMARY
+          R="$D/app/src/main/res"
+          mkdir -p "$R/drawable" "$R/mipmap-anydpi-v26" "$R/mipmap-anydpi"
+          cat > "$R/drawable/ic_launcher_background.xml" <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:aapt="http://schemas.android.com/aapt"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="1024" android:viewportHeight="1024">
+            <path android:pathData="M0,0h1024v1024h-1024z">
+              <aapt:attr name="android:fillColor">
+                <gradient android:type="linear" android:startX="0" android:startY="0"
+                    android:endX="1024" android:endY="1024">
+                  <item android:offset="0" android:color="#FF7F5FFA"/>
+                  <item android:offset="1" android:color="#FFF45FAE"/>
+                </gradient>
+              </aapt:attr>
+            </path>
+            <path android:fillColor="#33FFFFFF"
+                android:pathData="M150,240a362,180 0 1,0 724,0a362,180 0 1,0 -724,0z"/>
+          </vector>
+          EOF
+          cat > "$R/drawable/ic_launcher_foreground.xml" <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="1024" android:viewportHeight="1024">
+            <path android:fillColor="#FFF8F2FB"
+                android:pathData="M200,512a312,312 0 1,0 624,0a312,312 0 1,0 -624,0z"/>
+            <path android:fillColor="#FF7F5BFF"
+                android:pathData="M653.4,397.5A182,182 0 1 1 449.8,341.0L478.5,419.9A98,98 0 1 0 588.2,450.3Z"/>
+            <path android:fillColor="#FFFF5CA8"
+                android:pathData="M434,512a78,78 0 1,0 156,0a78,78 0 1,0 -156,0z"/>
+          </vector>
+          EOF
+          cat > "$R/mipmap-anydpi-v26/ic_launcher.xml" <<'EOF'
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+            <background android:drawable="@drawable/ic_launcher_background"/>
+            <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+          </adaptive-icon>
+          EOF
+          cat > "$R/mipmap-anydpi/ic_launcher.xml" <<'EOF'
+          <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+            <item android:drawable="@drawable/ic_launcher_background"/>
+            <item android:drawable="@drawable/ic_launcher_foreground"/>
+          </layer-list>
+          EOF
+          M="$D/app/src/main/AndroidManifest.xml"
+          sed -i 's|<application |<application android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" |' "$M"
+          grep -q 'android:icon' "$M"
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: '17'}
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '8.7'}
       - run: gradle assembleDebug --no-daemon -p "$D"
+      - name: Verify icon inside APK
+        run: |
+          AAPT=$(ls -d $ANDROID_HOME/build-tools/*/aapt2 | tail -1)
+          $AAPT dump badging "$D/app/build/outputs/apk/debug/app-debug.apk" | grep -E "^application:" | tee /tmp/badging.txt
+          grep -q "icon='res/" /tmp/badging.txt
+          echo "Icon verified: $(cat /tmp/badging.txt)" >> $GITHUB_STEP_SUMMARY
       - uses: actions/upload-artifact@v4
         with: {name: Auralis-APK, path: "${{ env.D }}/app/build/outputs/apk/debug/app-debug.apk"}
