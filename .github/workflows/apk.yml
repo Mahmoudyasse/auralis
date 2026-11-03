@@ -9,6 +9,22 @@ jobs:
           for z in *.zip; do unzip -oq "$z"; done
           D=$(dirname "$(find . -name settings.gradle.kts | head -1)")
           echo "D=$D" >> $GITHUB_ENV
+      - name: Inspect project
+        run: |
+          {
+            echo '### Files'
+            echo '```'
+            find "$D" -type f -not -path '*/build/*' -not -path '*/.gradle/*' | head -100
+            echo '```'
+            echo '### AndroidManifest.xml'
+            echo '```xml'
+            cat "$D/app/src/main/AndroidManifest.xml"
+            echo '```'
+            echo '### app/build.gradle.kts'
+            echo '```'
+            cat "$D/app/build.gradle.kts"
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: '17'}
       - uses: gradle/actions/setup-gradle@v4
