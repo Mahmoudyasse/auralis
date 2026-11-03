@@ -1,0 +1,11 @@
+name: Debug
+on: [push, workflow_dispatch]
+jobs:
+  d:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          ls -la
+          file *.zip
+          unzip -l *.zip | head -40
