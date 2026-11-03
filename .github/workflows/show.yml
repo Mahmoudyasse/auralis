@@ -8,13 +8,10 @@ jobs:
       - run: |
           for z in *.zip; do unzip -oq "$z"; done
           D=$(dirname "$(find . -name settings.gradle.kts | head -1)")
+          H="$D/app/src/main/assets/index.html"
           {
-            echo '### MainActivity.kt'
-            echo '~~~kotlin'
-            cat "$D/app/src/main/java/com/auralis/browser/MainActivity.kt"
-            echo '~~~'
-            echo '### index.html'
+            echo '### index.html (without embedded font)'
             echo '~~~html'
-            cat "$D/app/src/main/assets/index.html"
+            sed -E 's/base64,[A-Za-z0-9+\/=]{200,}/base64,REMOVED/g' "$H"
             echo '~~~'
           } >> $GITHUB_STEP_SUMMARY
