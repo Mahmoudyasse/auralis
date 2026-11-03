@@ -1,0 +1,396 @@
+name: Build APK 3
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unzip project
+        run: |
+          for z in *.zip; do unzip -oq "$z"; done
+          D=$(dirname "$(find . -name settings.gradle.kts | head -1)")
+          echo "D=$D" >> $GITHUB_ENV
+      - name: Replay stages 0-3 from apk.yml
+        run: |
+          python3 -c "import yaml" 2>/dev/null || pip install pyyaml --break-system-packages -q
+          python3 - <<'PYEOF'
+          import yaml
+          w=yaml.safe_load(open('.github/workflows/apk.yml',encoding='utf-8'))
+          n=0
+          for s in w['jobs']['build']['steps']:
+              nm=s.get('name','')
+              if nm.startswith(('Add app icon','Stage 1','Stage 2','Stage 3')):
+                  open('/tmp/old%d.sh'%n,'w',encoding='utf-8').write(s['run'])
+                  n+=1
+          print('extracted',n)
+          assert n==4,'apk.yml is not the latest version (expected 4 steps)'
+          PYEOF
+          bash -eo pipefail /tmp/old0.sh
+          for i in 1 2 3; do bash -eo pipefail /tmp/old$i.sh || echo "stage $i failed (continuing)"; done
+      - name: Stage 4 - pro tools (JS only)
+        continue-on-error: true
+        run: |
+          P=0
+          for n in 1 2 3; do if [ -d /tmp/st$n ]; then P=$n; fi; done
+          echo "Stage 4 base: stage $P"
+          cp /tmp/st$P/index.html "$D/app/src/main/assets/index.html"
+          cp /tmp/st$P/MainActivity.kt "$D/app/src/main/java/com/auralis/browser/MainActivity.kt"
+          cp /tmp/st$P/AndroidManifest.xml "$D/app/src/main/AndroidManifest.xml"
+          cat > /tmp/patch4.js <<'EOF'
+          (function(){
+          const nc=(f,...a)=>{try{if(window.Native&&Native[f])return Native[f](...a)}catch(e){}};
+          const cbs={};let cbi=0;
+          const _oe=window.onEval;
+          window.onEval=(id,r)=>{if(String(id)[0]==='q'){const f=cbs[id];delete cbs[id];if(f){let v=null;try{v=JSON.parse(r)}catch(e){}f(v)}}else if(_oe)_oe(id,r)};
+          const ser=(fn,a)=>'('+fn.toString()+').apply(null,'+JSON.stringify(a||[])+')';
+          const run=(fn,...a)=>nc('evalJs',ser(fn,a));
+          const ask=(fn,...a)=>new Promise(res=>{if(!(window.Native&&Native.evalCb)){res(null);return}const id='q'+(++cbi);cbs[id]=res;setTimeout(()=>{if(cbs[id]){delete cbs[id];res(null)}},4000);Native.evalCb(id,ser(fn,a))});
+          const TA='width:100%;height:130px;border-radius:14px;padding:12px;background:var(--gl);color:var(--fg);border:1px solid var(--bd);font-size:14px';
+          const isOpen=()=>$('#sh').classList.contains('on');
+          const panel=h=>{ovS=1;nat();$('#shp').innerHTML=h;$('#sh').classList.add('on')};
+          function cp2(t){const a=document.createElement('textarea');a.value=t;a.style.cssText='position:fixed;opacity:0';document.body.appendChild(a);a.select();try{document.execCommand('copy');alert('Copied')}catch(e){alert('Copy failed')}a.remove()}
+          function cp(t){try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(()=>alert('Copied'),()=>cp2(t));return}}catch(e){}cp2(t)}
+          const shareTxt=t=>{if(window.Native&&Native.share)nc('share',t);else cp(t)};
+          const tg=(k,l)=>`<div class="li"><div>${l}</div><span class="tg ${S[k]?'on':''}" data-a4="t_${k}"></span></div>`;
+          const seg=(k,arr)=>`<div class="seg" style="margin:6px 0 10px">${arr.map(([v,l])=>`<button class="${S[k]==v?'on':''}" data-a4="p_${k}_${v}">${l}</button>`).join('')}</div>`;
+          const day=()=>new Date().toISOString().slice(0,10);
+          const pk=()=>{try{const u=new URL(T().url);return u.origin+u.pathname}catch(e){return T().url||''}};
+          const pgSel=function(){return String(getSelection()||'')};
+          const pgMeta=function(){return {t:document.title,u:location.href}};
+          const pgText2=function(){return (document.body.innerText||'').slice(0,20000)};
+          const pgHeads=function(){var h=[].slice.call(document.querySelectorAll('h1,h2,h3')).filter(function(e){return e.innerText.trim()}).slice(0,80);window.__aurh=h;return h.map(function(e,i){return [e.tagName,e.innerText.trim().slice(0,90),i]})};
+          const pgGoHead=function(i){var h=window.__aurh;if(h&&h[i])h[i].scrollIntoView({behavior:'smooth',block:'start'});return 1};
+          const pgImgs=function(){return [].slice.call(document.images).filter(function(i){return i.naturalWidth>120&&/^https?:/.test(i.src)}).slice(0,60).map(function(i){return i.src})};
+          const pgLinks=function(){var s={},r=[];[].slice.call(document.links).forEach(function(a){if(/^https?:/.test(a.href)&&!s[a.href]){s[a.href]=1;r.push([(a.innerText||'').trim().slice(0,70)||a.href,a.href])}});return r.slice(0,200)};
+          const pgBar=function(on){var b=document.getElementById('aur-pb');if(b)b.remove();if(window.__aurpb){removeEventListener('scroll',window.__aurpb);window.__aurpb=null}if(!on)return 0;b=document.createElement('div');b.id='aur-pb';b.style.cssText='position:fixed;top:0;left:0;height:3px;width:0;background:linear-gradient(90deg,#7c5cff,#ff5ca8);z-index:2147483647;pointer-events:none';document.documentElement.appendChild(b);window.__aurpb=function(){var h=document.documentElement.scrollHeight-innerHeight;b.style.width=(h>0?scrollY/h*100:0)+'%'};addEventListener('scroll',window.__aurpb,{passive:true});window.__aurpb();return 1};
+          if(!Array.isArray(S.todo))S.todo=[];
+          if(!Array.isArray(S.nb))S.nb=[];
+          if(!S.pn||typeof S.pn!=='object')S.pn={};
+          if(!Array.isArray(S.blk))S.blk=[];
+          if(!S.lim||typeof S.lim!=='object')S.lim={};
+          if(!S.ts||typeof S.ts!=='object')S.ts={};
+          if(!Array.isArray(S.dsites))S.dsites=[];
+          if(!Array.isArray(S.darksites))S.darksites=[];
+          if(S.utm===undefined)S.utm=true;
+          if(S.phish===undefined)S.phish=true;
+          if(!S.hd)S.hd=0;
+          if(!S.uf)S.uf='def';
+          if(!S.ori)S.ori='auto';
+          if(S.hd>0)S.hist=S.hist.filter(x=>!x.d||x.d>Date.now()-S.hd*864e5);
+          save();
+          const used=k=>{const d=S.ts[day()]||{};let n=0;for(const h in d)if(h===k||h.endsWith('.'+k))n+=d[h];return n};
+          function blockedWhy(u){let h='';try{h=new URL(u).hostname.replace(/^www\./,'')}catch(e){return ''}
+            if(S.focus&&S.blk.some(b=>h===b||h.endsWith('.'+b)))return 'Blocked by Focus mode';
+            for(const k in S.lim){if((h===k||h.endsWith('.'+k))&&used(k)>=S.lim[k]*60)return 'Daily limit reached for '+k}
+            return ''}
+          function risk(u){try{const x=new URL(u),h=x.hostname;
+            if(/^\d+\.\d+\.\d+\.\d+$/.test(h))return 'IP address instead of a name';
+            if(h.includes('xn--'))return 'look-alike (punycode) characters';
+            if(x.username)return 'user info in the address';
+            if((h.match(/-/g)||[]).length>3)return 'too many hyphens';
+            if(h.split('.').length>5)return 'too many subdomains';
+            if(x.protocol==='http:'&&/login|signin|password|verify|account|bank|secure/i.test(x.pathname+x.search))return 'login page without HTTPS'}catch(e){}return ''}
+          function clean(u){try{const x=new URL(u);if(!/^https?:$/.test(x.protocol))return u;let ch=false;[...x.searchParams.keys()].forEach(k=>{if(/^(utm_|fbclid|gclid|mc_eid|mc_cid|igshid|yclid|ref_src|_ga)/i.test(k)){x.searchParams.delete(k);ch=true}});return ch?x.toString():u}catch(e){return u}}
+          const _ou=window.openU;
+          window.openU=function(u){u=String(u);if(S.utm)u=clean(u);const b=blockedWhy(u);if(b){alert('🚫 '+b);return}const r=S.phish?risk(u):'';if(r)alert('⚠ Be careful: '+r);return _ou(u)};
+          const _pill=window.pill;
+          if(typeof _pill==='function')window.pill=function(){_pill();try{const u=T().url;if(u&&/^http:/.test(u)){const f=document.querySelector('#isl span');if(f)f.textContent='⚠'}}catch(e){}};
+          const _isl=window.isl;
+          window.isl=function(o){_isl(o);if(o){try{const c=document.querySelector('#so .ch');if(c&&!c.querySelector('#qp')){c.insertAdjacentHTML('afterbegin','<button class="chip" id="qp">📋 Paste &amp; go</button>');$('#qp').addEventListener('click',async()=>{try{const t=await navigator.clipboard.readText();if(t)go(t);else alert('Clipboard is empty')}catch(e){alert('Clipboard access blocked')}})}}catch(e){}}};
+          const _th4=window.theme;
+          window.theme=function(){_th4();try{if(S.adark&&!S.inc){const h=new Date().getHours();document.documentElement.dataset.m=(h>=19||h<6)?'dark':'light'}}catch(e){}};
+          setInterval(()=>{if(S.adark)window.theme()},300000);
+          function applyUI(){const b=document.body;b.classList.toggle('sbot',!!S.sbot);b.classList.toggle('nodl',!!S.nodl);let st=$('#st4');if(!st){st=document.createElement('style');st.id='st4';document.head.appendChild(st)}const F={sys:'-apple-system,system-ui,sans-serif',ser:'Georgia,serif',mon:'ui-monospace,monospace'};st.textContent='body.sbot #so{flex-direction:column-reverse}body.nodl #dock button:nth-child(4){display:none}'+(F[S.uf]?'*{font-family:'+F[S.uf]+'!important}':'');try{window.theme()}catch(e){}}
+          function applyNative(){nc('wifiOnly',!!S.wifi);nc('popups',!S.nopop);nc('autoplay',!!S.noauto);nc('keepOn',!!S.keep);nc('volScroll',!!S.vol);nc('immersive',!!S.imm);nc('secure',!!S.sec);if(S.ori&&S.ori!=='auto')nc('orient',S.ori)}
+          let aT4,appliedDesk=!!S.desk;
+          function applySite(){const u=T().url;if(!u)return;const h=dom(u);const want=!!S.desk||S.dsites.includes(h);if(want!==appliedDesk){appliedDesk=want;nc('desktop',want)}nc('darkSites',!!S.dk||S.darksites.includes(h))}
+          function onPage(){applySite();if(S.pb)run(pgBar,true)}
+          const _on4=window.onNav;
+          window.onNav=function(u,t){if(_on4)_on4(u,t);clearTimeout(aT4);aT4=setTimeout(onPage,600)};
+          setInterval(()=>{try{const u=T().url;if(!u||S.inc||ovS||ovI)return;const k=day(),h=dom(u);const d=S.ts[k]||(S.ts[k]={});d[h]=(d[h]||0)+10;Object.keys(S.ts).sort().slice(0,-14).forEach(x=>delete S.ts[x]);save()}catch(e){}},10000);
+          function afterToggle(k){if(k==='pb')run(pgBar,!!S.pb);if(k==='wifi')nc('wifiOnly',!!S.wifi);if(k==='nopop')nc('popups',!S.nopop);if(k==='noauto')nc('autoplay',!!S.noauto);if(k==='keep')nc('keepOn',!!S.keep);if(k==='vol')nc('volScroll',!!S.vol);if(k==='imm')nc('immersive',!!S.imm);if(k==='sec')nc('secure',!!S.sec);applyUI()}
+          function afterPick(k){if(k==='ori')nc('orient',S.ori);if(k==='hd'&&S.hd>0)S.hist=S.hist.filter(x=>!x.d||x.d>Date.now()-S.hd*864e5);save();applyUI()}
+          let pom={mode:'work',left:1500,run:false};
+          const pomTxt=()=>String(Math.floor(pom.left/60)).padStart(2,'0')+':'+String(pom.left%60).padStart(2,'0');
+          function pomShow(){panel('<h2>🍅 Pomodoro</h2><div id="pomt" style="text-align:center;font-size:58px;font-weight:800;margin:14px 0">'+pomTxt()+'</div><div style="text-align:center;color:var(--mut)">'+(pom.mode==='work'?'Focus (25 min)':'Break (5 min)')+'</div><div style="text-align:center"><button class="cta" data-a4="pomgo">'+(pom.run?'Pause':'Start')+'</button><button class="cta" data-a4="pomrs">Reset</button><button class="cta" data-a4="pomsk">Skip</button></div>')}
+          setInterval(()=>{try{if(!pom.run)return;pom.left--;if(pom.left<=0){pom.run=false;alert(pom.mode==='work'?'Focus session done 🎉 Take a break':'Break over, back to work');pom.mode=pom.mode==='work'?'break':'work';pom.left=pom.mode==='work'?1500:300;if(isOpen()&&$('#pomt'))pomShow();return}const e=$('#pomt');if(e&&isOpen())e.textContent=pomTxt()}catch(e){}},1000);
+          let sw={run:false,t0:0,acc:0};
+          const swv=()=>sw.acc+(sw.run?Date.now()-sw.t0:0);
+          const swf=ms=>{const s=ms/1000;return String(Math.floor(s/60)).padStart(2,'0')+':'+(s%60).toFixed(1).padStart(4,'0')};
+          function swShow(){panel('<h2>⏱ Stopwatch</h2><div id="swt" style="text-align:center;font-size:52px;font-weight:800;margin:14px 0">'+swf(swv())+'</div><div style="text-align:center"><button class="cta" data-a4="swgo">'+(sw.run?'Stop':'Start')+'</button><button class="cta" data-a4="swrs">Reset</button></div>')}
+          setInterval(()=>{const e=$('#swt');if(e&&sw.run)e.textContent=swf(swv())},100);
+          function todoP(){panel('<h2>✅ To-do</h2><input type="text" id="tdi" placeholder="Add a task…" enterkeyhint="done"><button class="cta" data-a4="tdadd" style="width:100%;margin:8px 0">Add</button>'+(S.todo.map((x,i)=>`<div class="li"><span data-a4="tdt_${i}" style="font-size:22px">${x.d?'☑':'☐'}</span><div style="${x.d?'text-decoration:line-through;opacity:.5':''}">${esc(x.t)}</div><button class="chip" data-a4="tdx_${i}">✕</button></div>`).join('')||'<small>Nothing yet</small>')+(S.todo.some(x=>x.d)?'<button class="cta" data-a4="tdclr">Clear done</button>':''))}
+          const PN={Fajr:'الفجر',Sunrise:'الشروق',Dhuhr:'الظهر',Asr:'العصر',Maghrib:'المغرب',Isha:'العشاء'};
+          async function prayerP(){
+            panel('<h2>🕌 Prayer times</h2><small>Loading…</small>');
+            try{
+              let c=S.pc;
+              if(!c||c.d!==day()){
+                let ip;
+                try{ip=JSON.parse(await px('https://ipapi.co/json/'));if(!ip.latitude)throw 0}catch(e){const w=JSON.parse(await px('https://ipwho.is/'));ip={latitude:w.latitude,longitude:w.longitude,city:w.city}}
+                const j=JSON.parse(await px('https://api.aladhan.com/v1/timings?latitude='+ip.latitude+'&longitude='+ip.longitude+'&method=5'));
+                const t=j.data.timings;
+                c=S.pc={d:day(),city:ip.city,t:{Fajr:t.Fajr,Sunrise:t.Sunrise,Dhuhr:t.Dhuhr,Asr:t.Asr,Maghrib:t.Maghrib,Isha:t.Isha}};save();
+              }
+              if(!isOpen())return;
+              panel('<h2>🕌 Prayer times</h2><small>'+esc(c.city||'')+' · approximate location from your IP · Egyptian General Authority method</small>'+Object.entries(c.t).map(([k,v])=>`<div class="li"><div>${PN[k]} <small style="display:inline">${k}</small></div><b>${esc(String(v).slice(0,5))}</b></div>`).join(''));
+            }catch(e){if(isOpen())panel('<h2>🕌 Prayer times</h2><small>Could not load. Check your internet.</small>')}
+          }
+          async function curP(){
+            panel('<h2>💱 Currency</h2><small>Loading rates…</small>');
+            try{
+              let r=S.rt;
+              if(!r||Date.now()-r.t>3600000){const j=JSON.parse(await px('https://open.er-api.com/v6/latest/USD'));if(!j.rates)throw 0;r=S.rt={t:Date.now(),r:j.rates};save()}
+              if(!isOpen())return;
+              const L=['USD','EUR','EGP','SAR','AED','KWD','QAR','GBP','TRY','JPY','CNY','CAD'];
+              const o=v=>L.map(c=>`<option ${c===v?'selected':''}>${c}</option>`).join('');
+              panel(`<h2>💱 Currency</h2><input type="text" inputmode="decimal" id="ca" value="100"><div style="display:flex;gap:8px"><select id="cf">${o('USD')}</select><select id="ct">${o('EGP')}</select></div><div id="cr" style="font-size:26px;font-weight:800;margin:14px 0;text-align:center"></div><small>Rates refresh hourly (open.er-api.com). Indicative only.</small>`);
+              const calc=()=>{const a=parseFloat($('#ca').value),f=r.r[$('#cf').value],t=r.r[$('#ct').value];$('#cr').textContent=isFinite(a)?(a*t/f).toLocaleString(undefined,{maximumFractionDigits:2})+' '+$('#ct').value:'—'};
+              ['ca','cf','ct'].forEach(i=>{$('#'+i).addEventListener('input',calc);$('#'+i).addEventListener('change',calc)});calc();
+            }catch(e){if(isOpen())panel('<h2>💱 Currency</h2><small>Could not load rates. Check your internet.</small>')}
+          }
+          function wcP(){const Z=[['Cairo','Africa/Cairo'],['Riyadh','Asia/Riyadh'],['Dubai','Asia/Dubai'],['London','Europe/London'],['Paris','Europe/Paris'],['New York','America/New_York'],['Los Angeles','America/Los_Angeles'],['Tokyo','Asia/Tokyo'],['Sydney','Australia/Sydney']];
+            panel('<h2>🌍 World clock</h2>'+Z.map(([n,z])=>{let t='—';try{t=new Date().toLocaleTimeString([],{timeZone:z,hour:'2-digit',minute:'2-digit'})}catch(e){}return`<div class="li"><div>${n}</div><b>${t}</b></div>`}).join(''))}
+          function cdv(){return S.cd&&S.cd.d?Math.ceil((new Date(S.cd.d+'T00:00:00')-new Date())/864e5):null}
+          function cdp(){const d=cdv();panel('<h2>⏳ Countdown</h2>'+(d!==null?'<div style="text-align:center;font-size:48px;font-weight:800">'+d+'</div><div style="text-align:center;color:var(--mut)">days until '+esc(S.cd.n)+'</div>':'')+'<input type="text" id="cdn" placeholder="Event name" value="'+esc(S.cd?S.cd.n:'')+'"><input type="date" id="cdd" value="'+esc(S.cd?S.cd.d:'')+'" style="width:100%;margin:6px 0;border:1px solid var(--bd);background:var(--gl);color:var(--fg);border-radius:12px;padding:9px 12px;font-size:14px"><button class="cta" data-a4="cdsave">Save</button>'+(S.cd?'<button class="cta" data-a4="cdclr">Remove</button>':''))}
+          function nbList(){panel('<h2>📓 Notebooks</h2>'+(S.nb.map((x,i)=>`<div class="li" data-a4="nbo_${i}"><div>${esc(x.n)}<small>${esc((x.t||'').slice(0,60))}</small></div><button class="chip" data-a4="nbx_${i}">✕</button></div>`).join('')||'<small>No notebooks yet</small>')+'<button class="cta" data-a4="nbnew">＋ New notebook</button>')}
+          function nbEdit(i){const x=S.nb[i];if(!x){nbList();return}window.__nbi=i;panel('<h2>📓 Notebook</h2><textarea id="nbt" data-i="'+i+'" style="'+TA+';height:260px;font-size:15px">'+esc(x.t||'')+'</textarea><button class="cta" data-a4="nbl">Back</button><button class="cta" data-a4="nbcp">Copy</button><button class="cta" data-a4="nbsh">Share</button>')}
+          const XF={b64e:v=>btoa(unescape(encodeURIComponent(v))),b64d:v=>decodeURIComponent(escape(atob(v.trim()))),ue:v=>encodeURIComponent(v),ud:v=>decodeURIComponent(v),jf:v=>JSON.stringify(JSON.parse(v),null,2),jm:v=>JSON.stringify(JSON.parse(v)),up:v=>v.toUpperCase(),lo:v=>v.toLowerCase(),ti:v=>v.replace(/\b\w/g,c=>c.toUpperCase()),rv:v=>[...v].reverse().join(''),cs:v=>v.replace(/\s+/g,' ').trim(),
+            wc:v=>{const w=v.trim()?v.trim().split(/\s+/).length:0;return 'Words: '+w+'\nCharacters: '+v.length+'\nLines: '+(v?v.split('\n').length:0)+'\nReading time: '+Math.max(1,Math.round(w/200))+' min'},
+            hex:v=>{const m=v.trim().match(/^#?([0-9a-f]{6})$/i);if(!m)throw 0;const n=parseInt(m[1],16);return 'rgb('+(n>>16)+', '+(n>>8&255)+', '+(n&255)+')'},
+            rgb:v=>{const m=v.match(/(\d+)\D+(\d+)\D+(\d+)/);if(!m)throw 0;return '#'+[m[1],m[2],m[3]].map(x=>Math.max(0,Math.min(255,+x)).toString(16).padStart(2,'0')).join('')}};
+          function xfp(title,hint,keys){panel('<h2>'+title+'</h2><textarea id="xin" placeholder="'+hint+'" style="'+TA+'"></textarea><div class="seg" style="margin:8px 0">'+keys.map(([k,l])=>`<button data-a4="xf_${k}">${l}</button>`).join('')+'</div><pre id="xout" style="white-space:pre-wrap;word-break:break-all;font-size:13px;margin:0"></pre><button class="cta" data-a4="xcp">Copy result</button>')}
+          const TL={todo:todoP,pom:pomShow,sw:swShow,prayer:prayerP,cur:curP,wc:wcP,cd:cdp,nb:nbList,
+            json:()=>xfp('{ } JSON','Paste JSON here',[['jf','Format'],['jm','Minify']]),
+            b64:()=>xfp('🔤 Base64','Text',[['b64e','Encode'],['b64d','Decode']]),
+            url:()=>xfp('🔗 URL','Text or link',[['ue','Encode'],['ud','Decode']]),
+            wcnt:()=>xfp('🔢 Word counter','Paste text',[['wc','Count']]),
+            case:()=>xfp('Aa Text case','Text',[['up','UPPER'],['lo','lower'],['ti','Title Case'],['rv','Reverse'],['cs','Clean spaces']]),
+            col:()=>xfp('🎨 Color','#7c5cff or 124, 92, 255',[['hex','HEX → RGB'],['rgb','RGB → HEX']])};
+          function toolbox(){panel('<h2>🧰 Toolbox</h2>'+[['todo','✅','To-do list'],['pom','🍅','Pomodoro timer'],['sw','⏱','Stopwatch'],['prayer','🕌','Prayer times'],['cur','💱','Currency converter'],['wc','🌍','World clock'],['cd','⏳','Countdown'],['nb','📓','Notebooks'],['json','{ }','JSON formatter'],['b64','🔤','Base64'],['url','🔗','URL encode / decode'],['wcnt','🔢','Word counter'],['case','Aa','Text case'],['col','🎨','Color converter']].map(([a,i,l])=>`<div class="li" data-a4="tool_${a}"><div>${i} ${l}</div>›</div>`).join(''))}
+          function focusP(){panel('<h2>🎯 Focus mode</h2><small>Blocks listed sites when you open them from the address bar, search results or home. It does not block links clicked inside pages.</small>'+tg('focus','🎯 Focus mode')+'<h3>Blocked sites</h3>'+(S.blk.map((h,i)=>`<div class="li"><div>${esc(h)}</div><button class="chip" data-a4="bkx_${i}">✕</button></div>`).join('')||'<small>None</small>')+'<input type="text" id="fbi" placeholder="example.com" autocapitalize="off"><button class="cta" data-a4="bkadd">Add site</button><h3>Daily time limits</h3>'+Object.keys(S.lim).map(h=>`<div class="li"><div>${esc(h)}<small>${S.lim[h]} min/day · used ${Math.round(used(h)/60)} min</small></div><button class="chip" data-a4="lmx_${esc(h)}">✕</button></div>`).join('')+'<input type="text" id="lmh" placeholder="site, e.g. youtube.com" autocapitalize="off"><input type="text" id="lmm" inputmode="numeric" placeholder="minutes per day"><button class="cta" data-a4="lmadd">Set limit</button>')}
+          function usageP(){const d=S.ts[day()]||{};const tot=Object.values(d).reduce((a,b)=>a+b,0);
+            const agg={};Object.keys(S.ts).forEach(k=>{for(const h in S.ts[k])agg[h]=(agg[h]||0)+S.ts[k][h]});
+            const top=Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,8);
+            const pages=S.hist.filter(x=>/^https?:/.test(x.u)).length;
+            const B=[['🧭 Explorer','Visit 50 pages',pages>=50],['🛡 Shield','Block 100 trackers',(S.blocked||0)>=100],['⭐ Collector','Save 10 bookmarks',S.bm.length>=10],['📚 Reader','Add 5 to reading list',(S.rl||[]).length>=5],['🗂 Organizer','Have 5 tabs open',S.tabs.length>=5],['✅ Doer','Finish 5 tasks',S.todo.filter(x=>x.d).length>=5]];
+            panel('<h2>🏆 Usage</h2><div class="li"><div>Browsing today</div><b>'+Math.round(tot/60)+' min</b></div><h3>Top sites (14 days)</h3>'+(top.map(([h,s])=>`<div class="li"><div>${esc(h)}</div><b>${Math.round(s/60)} min</b></div>`).join('')||'<small>Not enough data yet</small>')+'<h3>Achievements</h3>'+B.map(([n,dsc,ok])=>`<div class="li" style="opacity:${ok?1:.45}"><div>${n}<small>${dsc}</small></div><b>${ok?'✓':'—'}</b></div>`).join(''))}
+          function moreP(){const dev=window.Native&&Native.keepOn;
+            panel('<h2>⚙ More settings</h2><h3>Browsing</h3>'+tg('pb','📊 Reading progress bar')+tg('utm','🧼 Clean tracking links (utm, fbclid…)')+tg('phish','⚠ Suspicious address warning')+'<h3>Appearance</h3>'+tg('adark','🌙 Auto dark mode (7pm–6am)')+tg('sbot','👍 Search at bottom (one-hand)')+tg('nodl','⤓ Hide download button in dock')+'<div style="margin-top:8px">Font</div>'+seg('uf',[['def','Default'],['sys','System'],['ser','Serif'],['mon','Mono']])+'<h3>History</h3><div>Auto-delete after (days)</div>'+seg('hd',[[0,'Never'],[7,'7'],[30,'30'],[90,'90']])+'<h3>Export</h3><div class="seg"><button data-a4="exbm">Bookmarks (HTML)</button><button data-a4="exhi">History (CSV)</button></div>'+(dev?'<h3>Device</h3>'+tg('wifi','📶 Download on Wi-Fi only')+tg('nopop','🚫 Block pop-ups')+tg('noauto','⏸ Block video autoplay')+tg('keep','💡 Keep screen on')+tg('vol','🔊 Volume keys scroll')+tg('imm','⛶ Fullscreen (hide system bars)')+tg('sec','🙈 Block screenshots')+'<div style="margin-top:8px">Orientation</div>'+seg('ori',[['auto','Auto'],['por','Portrait'],['lan','Landscape']])+'<div class="seg" style="margin-top:10px"><button data-a4="cc">Clear cache</button><button data-a4="ck">Clear all cookies</button><button data-a4="cs">Clear this site cookies</button></div>':'<small>Device settings need the newest build stage.</small>'))}
+          async function outline(){const r=await ask(pgHeads);panel('<h2>📑 Outline</h2>'+((r&&r.length)?r.map(([t,x,i])=>`<div class="li" data-a4="hd_${i}" style="padding-left:${t==='H1'?12:t==='H2'?24:36}px"><div>${esc(x)}</div></div>`).join(''):'<small>No headings found on this page</small>'))}
+          async function imgs(){const r=await ask(pgImgs);window.__imgs=r||[];panel('<h2>🖼 Page images</h2>'+((r&&r.length)?'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">'+r.map((s,i)=>`<img src="${esc(s)}" data-a4="im_${i}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;background:#8883">`).join('')+'</div>':'<small>No images found</small>'))}
+          function lkList(q){q=(q||'').toLowerCase();return (window.__lks||[]).map((x,i)=>[x,i]).filter(([x])=>!q||(x[0]+x[1]).toLowerCase().includes(q)).slice(0,100).map(([x,i])=>`<div class="li" data-a4="lk_${i}"><div>${esc(x[0])}<small>${esc(x[1])}</small></div></div>`).join('')||'<small>No links</small>'}
+          async function links(){const r=await ask(pgLinks);window.__lks=r||[];panel('<h2>🔗 Page links ('+window.__lks.length+')</h2><input type="text" id="lkq" placeholder="Filter links" autocapitalize="off"><div id="lkl">'+lkList('')+'</div>')}
+          async function summary(){
+            const t=await ask(pgText2);
+            if(!t){panel('<h2>📝 Summary</h2><small>Could not read this page</small>');return}
+            const txt=String(t).replace(/\s+/g,' ');
+            const sent=(txt.match(/[^.!؟?。]+[.!؟?。]+/g)||[]).map(x=>x.trim()).filter(x=>x.length>40&&x.length<300);
+            if(sent.length<3){panel('<h2>📝 Summary</h2><small>Not enough text on this page</small>');return}
+            const f={};(txt.toLowerCase().match(/[\p{L}]{4,}/gu)||[]).forEach(w=>{f[w]=(f[w]||0)+1});
+            const sc=sent.map((x,i)=>{const w=x.toLowerCase().match(/[\p{L}]{4,}/gu)||[];return [w.reduce((a,b)=>a+(f[b]||0),0)/Math.max(8,w.length),i,x]});
+            const top=sc.sort((a,b)=>b[0]-a[0]).slice(0,5).sort((a,b)=>a[1]-b[1]);
+            panel('<h2>📝 Summary</h2><small>Automatic extractive summary: key sentences, not AI.</small>'+top.map(x=>`<div class="li"><div style="white-space:normal;line-height:1.6">${esc(x[2])}</div></div>`).join(''))
+          }
+          async function selp(){
+            const t=String((await ask(pgSel))||'').trim();
+            if(!t){panel('<h2>✂ Selection</h2><small>No text selected. Select text on the page, open the menu and try again. This may not work on every page.</small>');return}
+            window.__sel=t;
+            panel('<h2>✂ Selection</h2><p style="word-break:break-word">'+esc(t.slice(0,300))+'</p><div class="seg"><button data-a4="sl_s">🔍 Search</button><button data-a4="sl_c">Copy</button><button data-a4="sl_h">Share</button><button data-a4="sl_t">🌐 Translate</button><button data-a4="sl_w">Wikipedia</button></div>')
+          }
+          function pnote(){const k=pk();panel('<h2>🗒 Page note</h2><small>'+esc(k)+'</small><textarea id="pnt" style="'+TA+';height:200px;margin-top:8px">'+esc(S.pn[k]||'')+'</textarea><small>Saved automatically.</small>')}
+          function tabSearch(q){q=(q||'').toLowerCase();return S.tabs.filter(t=>!q||(t.t+' '+(t.url||'')).toLowerCase().includes(q)).map(t=>`<div class="li" data-a4="tb_${t.id}"><div>${esc(t.t)}<small>${esc(t.url||'Start page')}</small></div></div>`).join('')||'<small>No match</small>'}
+          function tabsP(){panel('<h2>🔎 Search tabs</h2><input type="text" id="tsq" placeholder="Search open tabs" autocapitalize="off"><div id="tsl">'+tabSearch('')+'</div>')}
+          const H={toolbox,focus:focusP,usage:usageP,more:moreP,outline,imgs,links,summary,selp,pnote,
+            mdcp:async()=>{const m=await ask(pgMeta);if(m)cp('['+m.t+']('+m.u+')');else alert('Could not read the page')},
+            ds:()=>{const u=T().url;if(!u)return;const h=dom(u),i=S.dsites.indexOf(h);if(i>=0)S.dsites.splice(i,1);else S.dsites.push(h);save();closeS();applySite();alert('Desktop site for '+h+': '+(i>=0?'off':'on'))},
+            dks:()=>{const u=T().url;if(!u)return;const h=dom(u),i=S.darksites.indexOf(h);if(i>=0)S.darksites.splice(i,1);else S.darksites.push(h);save();closeS();applySite();alert('Dark mode for '+h+': '+(i>=0?'off':'on'))},
+            bsite:()=>{const u=T().url;if(!u)return;const h=dom(u);if(!S.blk.includes(h))S.blk.push(h);save();alert(h+' added. Turn on Focus mode to block it.')},
+            tabsearch:tabsP,
+            tabshare:()=>shareTxt(S.tabs.map(t=>(t.t||'')+'\n'+(t.url||'')).join('\n\n')),
+            tdadd:()=>{const v=($('#tdi').value||'').trim();if(v){S.todo.push({t:v,d:false});save()}todoP()},
+            tdclr:()=>{S.todo=S.todo.filter(x=>!x.d);save();todoP()},
+            pomgo:()=>{pom.run=!pom.run;pomShow()},
+            pomrs:()=>{pom.run=false;pom.mode='work';pom.left=1500;pomShow()},
+            pomsk:()=>{pom.run=false;pom.mode=pom.mode==='work'?'break':'work';pom.left=pom.mode==='work'?1500:300;pomShow()},
+            swgo:()=>{if(sw.run){sw.acc+=Date.now()-sw.t0;sw.run=false}else{sw.t0=Date.now();sw.run=true}swShow()},
+            swrs:()=>{sw.run=false;sw.acc=0;swShow()},
+            cdsave:()=>{const n=($('#cdn').value||'').trim(),d=$('#cdd').value;if(d){S.cd={n:n||'Event',d};save()}cdp()},
+            cdclr:()=>{S.cd=null;save();cdp()},
+            nbnew:()=>{S.nb.push({n:'Notebook '+(S.nb.length+1),t:''});save();nbEdit(S.nb.length-1)},
+            nbl:nbList,
+            nbcp:()=>{const x=S.nb[window.__nbi];if(x)cp(x.t||'')},
+            nbsh:()=>{const x=S.nb[window.__nbi];if(x)shareTxt(x.t||'')},
+            xcp:()=>{const o=$('#xout');if(o)cp(o.textContent)},
+            bkadd:()=>{const h=dom('https://'+($('#fbi').value||'').trim().replace(/^https?:\/\//,''));if(h&&h.includes('.')&&!S.blk.includes(h)){S.blk.push(h);save()}focusP()},
+            lmadd:()=>{const h=dom('https://'+($('#lmh').value||'').trim().replace(/^https?:\/\//,'')),m=parseInt($('#lmm').value,10);if(h&&h.includes('.')&&m>0){S.lim[h]=m;save();focusP()}else alert('Enter a site and minutes')},
+            exbm:()=>shareTxt('<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<DL><p>\n'+S.bm.map(b=>'<DT><A HREF="'+esc(b.u)+'">'+esc(b.t)+'</A>').join('\n')+'\n</DL>'),
+            exhi:()=>shareTxt('time,title,url\n'+S.hist.map(x=>[x.d?new Date(x.d).toISOString():'',(x.t||'').replace(/"/g,'""'),x.u].map(v=>'"'+v+'"').join(',')).join('\n')),
+            cc:()=>nc('clearCache'),ck:()=>nc('clearCookies'),cs:()=>nc('clearSite',T().url||'')};
+          const HP={
+            t:a=>{S[a]=!S[a];save();afterToggle(a);if(a==='focus')focusP();else moreP()},
+            p:a=>{const i=a.indexOf('_'),k=a.slice(0,i),v=a.slice(i+1);S[k]=/^\d+$/.test(v)?+v:v;save();afterPick(k);moreP()},
+            tool:a=>{const f=TL[a];if(f)f()},
+            xf:a=>{const o=$('#xout'),v=$('#xin').value;try{o.textContent=XF[a](v)}catch(e){o.textContent='⚠ Invalid input'}},
+            hd:a=>{closeS();run(pgGoHead,+a)},
+            im:a=>{const s=(window.__imgs||[])[+a];if(s){closeS();(window.openExt||window.openU)(s)}},
+            lk:a=>{const x=(window.__lks||[])[+a];if(x){closeS();openU(x[1])}},
+            sl:a=>{const t=window.__sel||'';if(!t)return;if(a==='c'){cp(t);return}if(a==='h'){shareTxt(t);return}closeS();const e=encodeURIComponent(t);if(a==='s')go(t);else if(a==='t')openU('https://translate.google.com/?sl=auto&tl=ar&op=translate&text='+e);else if(a==='w')openU('https://'+(/[\u0600-\u06FF]/.test(t)?'ar':'en')+'.wikipedia.org/w/index.php?search='+e)},
+            tdt:a=>{const x=S.todo[+a];if(x){x.d=!x.d;save();todoP()}},
+            tdx:a=>{S.todo.splice(+a,1);save();todoP()},
+            nbo:a=>nbEdit(+a),
+            nbx:a=>{S.nb.splice(+a,1);save();nbList()},
+            bkx:a=>{S.blk.splice(+a,1);save();focusP()},
+            lmx:a=>{delete S.lim[a];save();focusP()},
+            tb:a=>{S.cur=+a;closeS();render()}};
+          function dispatch(e){const a=e.target.closest('[data-a4]');if(!a)return;const v=a.dataset.a4;try{if(H[v]){H[v](a);return}const i=v.indexOf('_');if(i>0){const f=HP[v.slice(0,i)];if(f)f(v.slice(i+1),a)}}catch(err){alert('Error: '+((err&&err.message)||err))}}
+          $('#shp').addEventListener('click',dispatch);
+          $('#main').addEventListener('click',dispatch);
+          $('#shp').addEventListener('input',e=>{const t=e.target,v=t.value;
+            if(t.id==='nbt'){const i=+t.dataset.i,x=S.nb[i];if(x){x.t=v;x.n=(v.split('\n')[0]||'').trim().slice(0,30)||'Notebook '+(i+1);save()}}
+            else if(t.id==='pnt'){const k=pk();if(v)S.pn[k]=v;else delete S.pn[k];save()}
+            else if(t.id==='lkq'){$('#lkl').innerHTML=lkList(v)}
+            else if(t.id==='tsq'){$('#tsl').innerHTML=tabSearch(v)}});
+          document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target&&e.target.id==='tdi'){e.preventDefault();H.tdadd()}});
+          const QT=['ابدأ من حيث أنت، وبما لديك.','خطوة صغيرة كل يوم تصنع فرقًا كبيرًا.','التركيز على شيء واحد أقوى من تشتت عشرة.','الاستمرار أهم من السرعة.','Small steps every day add up.','Done is better than perfect.','Focus on progress, not perfection.','What you do today shapes tomorrow.','اقرأ شيئًا جديدًا اليوم.','خذ استراحة قصيرة، عقلك يستحق ذلك.'];
+          function homeX(){const m=$('#main');if(!m||m.querySelector('#hx4'))return;const ft=m.querySelector('.ft');if(!ft)return;const d=Math.floor(Date.now()/864e5),n=S.todo.filter(x=>!x.d).length,c=cdv();
+            ft.insertAdjacentHTML('beforebegin',`<div id="hx4"><div class="seg" style="justify-content:center;margin:14px 0 8px"><button data-a4="tool_todo">✅ To-do${n?' ('+n+')':''}</button><button data-a4="tool_pom">🍅 Focus</button><button data-a4="toolbox">🧰 Toolbox</button><button data-a4="focus">🎯 Block</button></div>${(c!==null&&S.cd)?`<div class="g w" style="margin-top:8px"><b>${c}</b><small>days until ${esc(S.cd.n)}</small></div>`:''}<div class="g w" style="margin-top:8px"><small>💡 Daily</small><div style="margin-top:4px;line-height:1.6">${esc(QT[d%QT.length])}</div></div></div>`)}
+          const _r4=window.render;
+          window.render=function(){_r4();try{const t=T();if(!t.url&&!t.sq)homeX()}catch(e){}};
+          function menuX(){let h='';
+            if(T().url)h+='<h3>More page tools</h3><div class="seg">'+[['outline','📑 Outline'],['imgs','🖼 Images'],['links','🔗 Links'],['summary','📝 Summary'],['selp','✂ Selection'],['pnote','🗒 Note'],['mdcp','📋 Copy Markdown'],['ds','🖥 Desktop here: '+(S.dsites.includes(dom(T().url))?'on':'off')],['dks','🌓 Dark here: '+(S.darksites.includes(dom(T().url))?'on':'off')],['bsite','🚫 Block site']].map(([a,l])=>`<button data-a4="${a}">${l}</button>`).join('')+'</div>';
+            h+='<h3>More</h3><div class="li" data-a4="toolbox"><div>🧰 Toolbox (14 tools)</div>›</div><div class="li" data-a4="focus"><div>🎯 Focus mode and time limits</div>›</div><div class="li" data-a4="usage"><div>🏆 Usage and achievements</div>›</div><div class="li" data-a4="more"><div>⚙ More settings</div>›</div>';
+            return h}
+          const _sh4=window.sheet;
+          window.sheet=function(k,pre){_sh4(k,pre);
+            if(k==='menu'){try{const p=$('#shp'),ft=p.querySelector('.ft'),h=menuX();if(ft)ft.insertAdjacentHTML('beforebegin',h);else p.insertAdjacentHTML('beforeend',h)}catch(e){}}
+            if(k==='tabs'){try{$('#shp').insertAdjacentHTML('beforeend','<div class="seg" style="margin-top:8px"><button data-a4="tabsearch">🔎 Search tabs</button><button data-a4="tabshare">↗ Share all tabs</button></div>')}catch(e){}}};
+          try{applyUI()}catch(e){}
+          try{applyNative()}catch(e){}
+          try{render()}catch(e){}
+          })();
+          EOF
+          node --check /tmp/patch4.js
+          python3 - <<'PYEOF'
+          import os
+          h=os.environ['D']+'/app/src/main/assets/index.html'
+          s=open(h,encoding='utf-8').read()
+          i=s.rfind('</body>')
+          assert i>0,'no body end'
+          s=s[:i]+'<script>\n'+open('/tmp/patch4.js',encoding='utf-8').read()+'\n</script>'+s[i:]
+          open(h,'w',encoding='utf-8').write(s)
+          PYEOF
+          grep -q "function toolbox" "$D/app/src/main/assets/index.html"
+          mkdir -p /tmp/st4
+          cp "$D/app/src/main/assets/index.html" "$D/app/src/main/java/com/auralis/browser/MainActivity.kt" "$D/app/src/main/AndroidManifest.xml" /tmp/st4/
+          echo "Stage 4 applied" >> $GITHUB_STEP_SUMMARY
+      - name: Stage 5 - device features (Kotlin)
+        continue-on-error: true
+        run: |
+          P=0
+          for n in 1 2 3 4; do if [ -d /tmp/st$n ]; then P=$n; fi; done
+          echo "Stage 5 base: stage $P"
+          cp /tmp/st$P/index.html "$D/app/src/main/assets/index.html"
+          cp /tmp/st$P/MainActivity.kt "$D/app/src/main/java/com/auralis/browser/MainActivity.kt"
+          cp /tmp/st$P/AndroidManifest.xml "$D/app/src/main/AndroidManifest.xml"
+          python3 - <<'PYEOF'
+          import os
+          D=os.environ['D']
+          k=D+'/app/src/main/java/com/auralis/browser/MainActivity.kt'
+          t=open(k,encoding='utf-8').read()
+          def rep(a,b):
+              global t
+              assert a in t,'missing: '+a[:60]
+              t=t.replace(a,b,1)
+          BRIDGE=r'''
+                  @JavascriptInterface fun wifiOnly(on: Boolean) { prefs().edit().putBoolean("wifi", on).apply() }
+                  @JavascriptInterface fun popups(allow: Boolean) = runOnUiThread { web.settings.javaScriptCanOpenWindowsAutomatically = allow }
+                  @JavascriptInterface fun autoplay(block: Boolean) = runOnUiThread { web.settings.mediaPlaybackRequiresUserGesture = block }
+                  @JavascriptInterface fun keepOn(on: Boolean) = runOnUiThread {
+                      if (on) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                  }
+                  @JavascriptInterface fun volScroll(on: Boolean) { volScrollFlag = on }
+                  @JavascriptInterface fun immersive(on: Boolean) = runOnUiThread {
+                      window.decorView.systemUiVisibility = if (on) (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE) else View.SYSTEM_UI_FLAG_VISIBLE
+                  }
+                  @JavascriptInterface fun secure(on: Boolean) = runOnUiThread {
+                      if (on) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                  }
+                  @JavascriptInterface fun orient(m: String) = runOnUiThread {
+                      requestedOrientation = when (m) {
+                          "por" -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                          "lan" -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                          else -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                      }
+                  }
+                  @JavascriptInterface fun clearCache() = runOnUiThread { web.clearCache(true); toast("Cache cleared") }
+                  @JavascriptInterface fun clearCookies() = runOnUiThread {
+                      CookieManager.getInstance().removeAllCookies(null)
+                      WebStorage.getInstance().deleteAllData()
+                      toast("Cookies cleared")
+                  }
+                  @JavascriptInterface fun clearSite(u: String) = runOnUiThread {
+                      val cm = CookieManager.getInstance()
+                      val c = cm.getCookie(u)
+                      if (c != null) {
+                          for (p in c.split(";")) {
+                              val n = p.substringBefore("=").trim()
+                              if (n.isNotEmpty()) cm.setCookie(u, n + "=; Max-Age=0; Path=/")
+                          }
+                          cm.flush()
+                      }
+                      toast("Site cookies cleared")
+                  }
+          '''
+          KEY=r'''
+              override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+                  if (volScrollFlag && web.visibility == View.VISIBLE) {
+                      if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN) { web.pageDown(false); return true }
+                      if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP) { web.pageUp(false); return true }
+                  }
+                  return super.onKeyDown(keyCode, event)
+              }
+          '''
+          rep('private var stopAt = 0L','private var stopAt = 0L\n    private var volScrollFlag = false')
+          h='@JavascriptInterface fun hide() = runOnUiThread { web.visibility = View.GONE }'
+          rep(h,h+'\n'+BRIDGE)
+          rep('r.setMimeType(mime); r.addRequestHeader("User-Agent", ua)','r.setMimeType(mime); r.addRequestHeader("User-Agent", ua)\n            if (prefs().getBoolean("wifi", false)) r.setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI)')
+          rep('private fun nav(url: String, title: String) {',KEY+'\n    private fun nav(url: String, title: String) {')
+          open(k,'w',encoding='utf-8').write(t)
+          print('stage5 ok')
+          PYEOF
+          grep -q "fun volScroll" "$D/app/src/main/java/com/auralis/browser/MainActivity.kt"
+          mkdir -p /tmp/st5
+          cp "$D/app/src/main/assets/index.html" "$D/app/src/main/java/com/auralis/browser/MainActivity.kt" "$D/app/src/main/AndroidManifest.xml" /tmp/st5/
+          echo "Stage 5 applied" >> $GITHUB_STEP_SUMMARY
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.7'}
+      - name: Build with fallback
+        run: |
+          F="$D/app/src/main/assets/index.html"
+          K="$D/app/src/main/java/com/auralis/browser/MainActivity.kt"
+          MF="$D/app/src/main/AndroidManifest.xml"
+          OK=0
+          for n in 5 4 3 2 1 0; do
+            [ -d /tmp/st$n ] || continue
+            cp /tmp/st$n/index.html "$F"
+            cp /tmp/st$n/MainActivity.kt "$K"
+            cp /tmp/st$n/AndroidManifest.xml "$MF"
+            if gradle assembleDebug --no-daemon -p "$D"; then
+              echo "### Built with stage $n (5 = everything)" >> $GITHUB_STEP_SUMMARY
+              OK=1
+              break
+            fi
+            echo "Stage $n failed to build, trying the previous one" >> $GITHUB_STEP_SUMMARY
+          done
+          [ "$OK" = 1 ]
+      - name: Verify icon inside APK
+        run: |
+          AAPT=$(ls -d $ANDROID_HOME/build-tools/*/aapt2 | tail -1)
+          $AAPT dump badging "$D/app/build/outputs/apk/debug/app-debug.apk" | grep -E "^application:" | tee /tmp/badging.txt
+          grep -q "icon='res/" /tmp/badging.txt
+          echo "Icon verified: $(cat /tmp/badging.txt)" >> $GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        with: {name: Auralis-APK-v4, path: "${{ env.D }}/app/build/outputs/apk/debug/app-debug.apk"}
