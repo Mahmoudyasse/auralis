@@ -1,0 +1,18 @@
+name: Build APK 2
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          for z in *.zip; do unzip -oq "$z"; done
+          D=$(dirname "$(find . -name settings.gradle.kts | head -1)")
+          echo "D=$D" >> $GITHUB_ENV
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.7'}
+      - run: gradle assembleDebug --no-daemon -p "$D"
+      - uses: actions/upload-artifact@v4
+        with: {name: Auralis-APK, path: "${{ env.D }}/app/build/outputs/apk/debug/app-debug.apk"}
